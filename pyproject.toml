@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "train"
+version = "0.1.0"
+description = ""
+authors = ["aleksandr <aleksandr_drobnov@epam.com>"]
+
+[tool.poetry.dependencies]
+python = "3.8.10"
+kfp = "^1.8.5"
+
+[tool.poetry.dev-dependencies]
+click = "^8.0.3"
+scipy = "^1.7.1"
+kfp = "^1.8.5"
+minio = "^7.1.1"
+mmpycocotools = "^12.0.3"
+mmcv-full = { url = "https://download.openmmlab.com/mmcv/dist/1.2.2/torch1.7.0/cu110/mmcv_full-1.2.2%2Btorch1.7.0%2Bcu110-cp38-cp38-manylinux1_x86_64.whl"}
+opencv-python = "^4.5.3"
+poethepoet = "^0.10.0"
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poe.tasks]
+force-pytorch = "pip3 install torch==1.7.0+cu110 torchvision==0.8.1+cu110 -f https://download.pytorch.org/whl/torch_stable.html"

@@ -1,0 +1,287 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: train-and-export-
+  annotations: {pipelines.kubeflow.org/kfp_sdk_version: 1.8.5, pipelines.kubeflow.org/pipeline_compilation_time: '2021-10-16T12:22:04.615483',
+    pipelines.kubeflow.org/pipeline_spec: '{"inputs": [{"name": "dataset_path", "type":
+      "String"}, {"name": "export_bucket", "type": "String"}, {"name": "model_name",
+      "type": "String"}, {"name": "model_version", "type": "String"}, {"name": "config",
+      "type": "String"}, {"name": "load_from", "type": "String"}, {"name": "resume_from",
+      "type": "String"}, {"name": "num_epoch", "type": "Integer"}], "name": "Train
+      and export"}'}
+  labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.8.5}
+spec:
+  entrypoint: train-and-export
+  templates:
+  - name: download-dataset
+    container:
+      args: [--input-path, '{{inputs.parameters.dataset_path}}', --output, /tmp/outputs/output/data]
+      command:
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - |
+        def _make_parent_dirs_and_return_path(file_path: str):
+            import os
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            return file_path
+
+        def download_dataset(input_path, output_path):
+            """Download the data set to the Kubeflow Pipelines
+            volume to share it among all steps"""
+            import tarfile
+            import os
+            from minio import Minio
+
+            if not os.path.exists(output_path):
+                os.makedirs(output_path)
+            client = Minio(
+                os.environ.get("MINIO_SERVER"),
+                os.environ.get("ACCESS_KEY"),
+                os.environ.get("SECRET_KEY"),
+                secure=False,
+            )
+            bucket, file_name = input_path.replace("minio://", "").split("/", maxsplit=1)
+            client.fget_object(bucket, file_name, file_name.rsplit("/", maxsplit=1)[-1])
+            tar = tarfile.open(name=file_name.rsplit("/", maxsplit=1)[-1], mode="r|gz")
+            tar.extractall(path=output_path)
+
+        import argparse
+        _parser = argparse.ArgumentParser(prog='Download dataset', description='Download the data set to the Kubeflow Pipelines')
+        _parser.add_argument("--input-path", dest="input_path", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--output", dest="output_path", type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)
+        _parsed_args = vars(_parser.parse_args())
+
+        _outputs = download_dataset(**_parsed_args)
+      image: 192.168.0.104:5000/minio_kubeflow:v1
+    inputs:
+      parameters:
+      - {name: dataset_path}
+    outputs:
+      artifacts:
+      - {name: download-dataset-output, path: /tmp/outputs/output/data}
+    metadata:
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/enable_caching: "true"
+      annotations: {pipelines.kubeflow.org/component_spec: '{"description": "Download
+          the data set to the Kubeflow Pipelines", "implementation": {"container":
+          {"args": ["--input-path", {"inputValue": "input_path"}, "--output", {"outputPath":
+          "output"}], "command": ["sh", "-ec", "program_path=$(mktemp)\nprintf \"%s\"
+          \"$0\" > \"$program_path\"\npython3 -u \"$program_path\" \"$@\"\n", "def
+          _make_parent_dirs_and_return_path(file_path: str):\n    import os\n    os.makedirs(os.path.dirname(file_path),
+          exist_ok=True)\n    return file_path\n\ndef download_dataset(input_path,
+          output_path):\n    \"\"\"Download the data set to the Kubeflow Pipelines\n    volume
+          to share it among all steps\"\"\"\n    import tarfile\n    import os\n    from
+          minio import Minio\n\n    if not os.path.exists(output_path):\n        os.makedirs(output_path)\n    client
+          = Minio(\n        os.environ.get(\"MINIO_SERVER\"),\n        os.environ.get(\"ACCESS_KEY\"),\n        os.environ.get(\"SECRET_KEY\"),\n        secure=False,\n    )\n    bucket,
+          file_name = input_path.replace(\"minio://\", \"\").split(\"/\", maxsplit=1)\n    client.fget_object(bucket,
+          file_name, file_name.rsplit(\"/\", maxsplit=1)[-1])\n    tar = tarfile.open(name=file_name.rsplit(\"/\",
+          maxsplit=1)[-1], mode=\"r|gz\")\n    tar.extractall(path=output_path)\n\nimport
+          argparse\n_parser = argparse.ArgumentParser(prog=''Download dataset'', description=''Download
+          the data set to the Kubeflow Pipelines'')\n_parser.add_argument(\"--input-path\",
+          dest=\"input_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--output\",
+          dest=\"output_path\", type=_make_parent_dirs_and_return_path, required=True,
+          default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\n_outputs
+          = download_dataset(**_parsed_args)\n"], "image": "192.168.0.104:5000/minio_kubeflow:v1"}},
+          "inputs": [{"name": "input_path", "type": "String"}], "name": "Download
+          dataset", "outputs": [{"name": "output", "type": "String"}]}', pipelines.kubeflow.org/component_ref: '{}',
+        pipelines.kubeflow.org/arguments.parameters: '{"input_path": "{{inputs.parameters.dataset_path}}"}',
+        pipelines.kubeflow.org/max_cache_staleness: P0D}
+  - name: export-model
+    container:
+      args: [--model-dir, /tmp/inputs/model_dir/data, --export-bucket, '{{inputs.parameters.export_bucket}}',
+        --model-name, '{{inputs.parameters.model_name}}', --model-version, '{{inputs.parameters.model_version}}']
+      command:
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - |
+        def export_model(
+            model_dir,
+            export_bucket,
+            model_name,
+            model_version,
+        ):
+            import os
+            from minio import Minio
+            from pathlib import Path
+
+            client = Minio(
+                os.environ.get("MINIO_SERVER"),
+                os.environ.get("ACCESS_KEY"),
+                os.environ.get("SECRET_KEY"),
+                secure=False,
+            )
+
+            # Create export bucket if it does not yet exist
+            if not client.bucket_exists(export_bucket):
+                client.make_bucket(export_bucket)
+
+            # Save model files to minio
+            for file in model_dir.glob("**/*.*"):
+                minio_path = Path(file).relative_to(model_dir)
+                print(file, minio_path)
+                client.fput_object(
+                    export_bucket,
+                    str(Path(model_name, model_version, minio_path)),
+                    str(file))
+
+            response = client.list_objects(
+                export_bucket,
+                prefix=str(Path(model_name) / Path(model_version)),
+                recursive=True,
+            )
+
+            print(f"All objects in {export_bucket}:")
+            for file in response:
+                print(file.object_name)
+
+        import argparse
+        _parser = argparse.ArgumentParser(prog='Export model', description='')
+        _parser.add_argument("--model-dir", dest="model_dir", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--export-bucket", dest="export_bucket", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--model-name", dest="model_name", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--model-version", dest="model_version", type=str, required=True, default=argparse.SUPPRESS)
+        _parsed_args = vars(_parser.parse_args())
+
+        _outputs = export_model(**_parsed_args)
+      image: 192.168.0.104:5000/minio_kubeflow:v1
+    inputs:
+      parameters:
+      - {name: export_bucket}
+      - {name: model_name}
+      - {name: model_version}
+      artifacts:
+      - {name: train-model-Output-dir, path: /tmp/inputs/model_dir/data}
+    metadata:
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/enable_caching: "true"
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": ["--model-dir", {"inputPath": "model_dir"}, "--export-bucket",
+          {"inputValue": "export_bucket"}, "--model-name", {"inputValue": "model_name"},
+          "--model-version", {"inputValue": "model_version"}], "command": ["sh", "-ec",
+          "program_path=$(mktemp)\nprintf \"%s\" \"$0\" > \"$program_path\"\npython3
+          -u \"$program_path\" \"$@\"\n", "def export_model(\n    model_dir,\n    export_bucket,\n    model_name,\n    model_version,\n):\n    import
+          os\n    from minio import Minio\n    from pathlib import Path\n\n    client
+          = Minio(\n        os.environ.get(\"MINIO_SERVER\"),\n        os.environ.get(\"ACCESS_KEY\"),\n        os.environ.get(\"SECRET_KEY\"),\n        secure=False,\n    )\n\n    #
+          Create export bucket if it does not yet exist\n    if not client.bucket_exists(export_bucket):\n        client.make_bucket(export_bucket)\n\n    #
+          Save model files to minio\n    for file in model_dir.glob(\"**/*.*\"):\n        minio_path
+          = Path(file).relative_to(model_dir)\n        print(file, minio_path)\n        client.fput_object(\n            export_bucket,\n            str(Path(model_name,
+          model_version, minio_path)),\n            str(file))\n\n    response = client.list_objects(\n        export_bucket,\n        prefix=str(Path(model_name)
+          / Path(model_version)),\n        recursive=True,\n    )\n\n    print(f\"All
+          objects in {export_bucket}:\")\n    for file in response:\n        print(file.object_name)\n\nimport
+          argparse\n_parser = argparse.ArgumentParser(prog=''Export model'', description='''')\n_parser.add_argument(\"--model-dir\",
+          dest=\"model_dir\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--export-bucket\",
+          dest=\"export_bucket\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--model-name\",
+          dest=\"model_name\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--model-version\",
+          dest=\"model_version\", type=str, required=True, default=argparse.SUPPRESS)\n_parsed_args
+          = vars(_parser.parse_args())\n\n_outputs = export_model(**_parsed_args)\n"],
+          "image": "192.168.0.104:5000/minio_kubeflow:v1"}}, "inputs": [{"name": "model_dir",
+          "type": "String"}, {"name": "export_bucket", "type": "String"}, {"name":
+          "model_name", "type": "String"}, {"name": "model_version", "type": "String"}],
+          "name": "Export model"}', pipelines.kubeflow.org/component_ref: '{}', pipelines.kubeflow.org/arguments.parameters: '{"export_bucket":
+          "{{inputs.parameters.export_bucket}}", "model_name": "{{inputs.parameters.model_name}}",
+          "model_version": "{{inputs.parameters.model_version}}"}'}
+  - name: train-and-export
+    inputs:
+      parameters:
+      - {name: config}
+      - {name: dataset_path}
+      - {name: export_bucket}
+      - {name: load_from}
+      - {name: model_name}
+      - {name: model_version}
+      - {name: num_epoch}
+      - {name: resume_from}
+    dag:
+      tasks:
+      - name: download-dataset
+        template: download-dataset
+        arguments:
+          parameters:
+          - {name: dataset_path, value: '{{inputs.parameters.dataset_path}}'}
+      - name: export-model
+        template: export-model
+        dependencies: [train-model]
+        arguments:
+          parameters:
+          - {name: export_bucket, value: '{{inputs.parameters.export_bucket}}'}
+          - {name: model_name, value: '{{inputs.parameters.model_name}}'}
+          - {name: model_version, value: '{{inputs.parameters.model_version}}'}
+          artifacts:
+          - {name: train-model-Output-dir, from: '{{tasks.train-model.outputs.artifacts.train-model-Output-dir}}'}
+      - name: train-model
+        template: train-model
+        dependencies: [download-dataset]
+        arguments:
+          parameters:
+          - {name: config, value: '{{inputs.parameters.config}}'}
+          - {name: load_from, value: '{{inputs.parameters.load_from}}'}
+          - {name: num_epoch, value: '{{inputs.parameters.num_epoch}}'}
+          - {name: resume_from, value: '{{inputs.parameters.resume_from}}'}
+          artifacts:
+          - {name: download-dataset-output, from: '{{tasks.download-dataset.outputs.artifacts.download-dataset-output}}'}
+  - name: train-model
+    container:
+      args: [--dataset-path, /tmp/inputs/Dataset_Path/data, --load-from, '{{inputs.parameters.load_from}}',
+        --resume-from, '{{inputs.parameters.resume_from}}', --config, '{{inputs.parameters.config}}',
+        --model-output, /tmp/outputs/Output_dir/data, --num-epoch, '{{inputs.parameters.num_epoch}}']
+      command: [python3, train.py]
+      image: 192.168.0.104:5000/kubeflow_train_model:v2
+    inputs:
+      parameters:
+      - {name: config}
+      - {name: load_from}
+      - {name: num_epoch}
+      - {name: resume_from}
+      artifacts:
+      - {name: download-dataset-output, path: /tmp/inputs/Dataset_Path/data}
+    outputs:
+      artifacts:
+      - {name: train-model-Output-dir, path: /tmp/outputs/Output_dir/data}
+    metadata:
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.5
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/enable_caching: "true"
+      annotations: {pipelines.kubeflow.org/component_spec: '{"description": "Train
+          model on dataset.", "implementation": {"container": {"args": ["--dataset-path",
+          {"inputPath": "Dataset Path"}, "--load-from", {"inputValue": "Load from"},
+          "--resume-from", {"inputValue": "Resume from"}, "--config", {"inputValue":
+          "Config"}, "--model-output", {"outputPath": "Output dir"}, "--num-epoch",
+          {"inputValue": "Num epoch"}], "command": ["python3", "train.py"], "image":
+          "192.168.0.104:5000/kubeflow_train_model:v2"}}, "inputs": [{"description":
+          "Input dataset for training model", "name": "Dataset Path", "type": "String"},
+          {"description": "Optional, Path to base model for training, use s3://<input_bucket>/<model.pth>
+          format", "name": "Load from", "type": "String"}, {"description": "You could
+          use it if training was interrupted for some reason", "name": "Resume from",
+          "type": "String"}, {"description": "By default will be used configs/CASCADE_RCNN_COCO.py,
+          but you could redefine it and provide your config", "name": "Config", "type":
+          "String"}, {"description": "Num epoch of training", "name": "Num epoch",
+          "type": "Integer"}], "name": "Train model", "outputs": [{"description":
+          "Output directory with model files", "name": "Output dir", "type": "String"}]}',
+        pipelines.kubeflow.org/component_ref: '{"digest": "f5d3a699d1d70928e12d095b9efef74617c2080aafed8baf7d8c8605aa65bc38",
+          "url": "components/train.yaml"}', pipelines.kubeflow.org/arguments.parameters: '{"Config":
+          "{{inputs.parameters.config}}", "Load from": "{{inputs.parameters.load_from}}",
+          "Num epoch": "{{inputs.parameters.num_epoch}}", "Resume from": "{{inputs.parameters.resume_from}}"}'}
+  arguments:
+    parameters:
+    - {name: dataset_path}
+    - {name: export_bucket}
+    - {name: model_name}
+    - {name: model_version}
+    - {name: config}
+    - {name: load_from}
+    - {name: resume_from}
+    - {name: num_epoch}
+  serviceAccountName: pipeline-runner

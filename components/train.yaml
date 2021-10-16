@@ -1,0 +1,26 @@
+name: Train model
+description: Train model on dataset.
+
+
+inputs:
+- {name: Dataset Path, type: String, description: "Input dataset for training model"}
+- {name: Load from, type: String, description: "Optional, Path to base model for training, use s3://<input_bucket>/<model.pth> format"}
+- {name: Resume from, type: String, description: "You could use it if training was interrupted for some reason"}
+- {name: Config, type: String, description: "By default will be used configs/CASCADE_RCNN_COCO.py, but you could redefine it and provide your config"}
+- {name: Num epoch, type: Integer, description: "Num epoch of training"}
+outputs:
+- {name: Output dir, type: String, description: Output directory with model files}
+
+
+implementation:
+  container:
+    image: 192.168.0.104:5000/kubeflow_train_model:v2
+    command: [python3, train.py]
+    args: [
+        --dataset-path, {inputPath: Dataset Path},
+        --load-from,    {inputValue: Load from},
+        --resume-from,  {inputValue: Resume from},
+        --config,       {inputValue: Config},
+        --model-output, {outputPath: Output dir},
+        --num-epoch,    {inputValue: Num epoch},
+            ]

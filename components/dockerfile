@@ -1,0 +1,10 @@
+from python:3.8
+
+RUN pip install minio==7.1.1
+
+ENV MINIO_SERVER=minio-service:9000
+ENV ACCESS_KEY=minio
+ENV SECRET_KEY=minio123
+
+EXPOSE 8000
+CMD ["/bin/bash"]
